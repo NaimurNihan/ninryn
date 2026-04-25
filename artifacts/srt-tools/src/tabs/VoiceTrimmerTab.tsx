@@ -3,20 +3,22 @@ import { useAudioAnalysis } from "@/hooks/useAudioAnalysis";
 import UploadBox from "@/tabs/trimmer/UploadBox";
 import AudioCard from "@/tabs/trimmer/AudioCard";
 import DownloadPanel from "@/tabs/trimmer/DownloadPanel";
-import { Scissors, Trash2, FolderInput, Download } from "lucide-react";
+import { Scissors, Trash2, FolderInput, Download, Zap } from "lucide-react";
 import JSZip from "jszip";
 
 type SplitStage = "idle" | "preview" | "trimming" | "done";
 
 interface VoiceTrimmerTabProps {
   onSendToCutting?: (files: File[]) => void;
+  onSendToSpeed?: (files: File[]) => void;
   incomingAudioFiles?: { files: File[]; key: number };
 }
 
-export default function VoiceTrimmerTab({ onSendToCutting, incomingAudioFiles }: VoiceTrimmerTabProps = {}) {
+export default function VoiceTrimmerTab({ onSendToCutting, onSendToSpeed, incomingAudioFiles }: VoiceTrimmerTabProps = {}) {
   const { audioFiles, addFiles, removeFile, trimAllFiles, resetTrim } = useAudioAnalysis();
   const [splitStage, setSplitStage] = useState<SplitStage>("idle");
   const [loaded, setLoaded] = useState(false);
+  const [loadedSpeed, setLoadedSpeed] = useState(false);
   const lastIncomingKeyRef = useRef<number | null>(null);
   const audioFilesRef = useRef(audioFiles);
   audioFilesRef.current = audioFiles;
@@ -28,6 +30,7 @@ export default function VoiceTrimmerTab({ onSendToCutting, incomingAudioFiles }:
     resetTrim();
     setSplitStage("idle");
     setLoaded(false);
+    setLoadedSpeed(false);
     audioFilesRef.current.forEach((f) => removeFile(f.id));
     addFiles(incomingAudioFiles.files);
   }, [incomingAudioFiles, addFiles, removeFile, resetTrim]);
@@ -71,16 +74,28 @@ export default function VoiceTrimmerTab({ onSendToCutting, incomingAudioFiles }:
     URL.revokeObjectURL(url);
   };
 
-  const handleLoadToCutting = () => {
-    if (!onSendToCutting) return;
+  const buildTrimmedFiles = (): File[] => {
     const trimmed = audioFiles.filter((f) => f.isTrimmed && f.trimmedBlob);
-    if (trimmed.length === 0) return;
-    const files: File[] = trimmed.map((f) => {
+    return trimmed.map((f) => {
       const baseName = f.name.replace(/\.[^.]+$/, "") + "_trimmed.wav";
       return new File([f.trimmedBlob as Blob], baseName, { type: "audio/wav" });
     });
+  };
+
+  const handleLoadToCutting = () => {
+    if (!onSendToCutting) return;
+    const files = buildTrimmedFiles();
+    if (files.length === 0) return;
     onSendToCutting(files);
     setLoaded(true);
+  };
+
+  const handleLoadToSpeed = () => {
+    if (!onSendToSpeed) return;
+    const files = buildTrimmedFiles();
+    if (files.length === 0) return;
+    onSendToSpeed(files);
+    setLoadedSpeed(true);
   };
 
   const splitLabel =
@@ -157,6 +172,33 @@ export default function VoiceTrimmerTab({ onSendToCutting, incomingAudioFiles }:
             >
               <FolderInput className="w-3 h-3" />
               {loaded ? "Loaded ✓" : "Load to Cutting++"}
+            </button>
+          )}
+          {splitStage === "done" && trimmedCount > 0 && onSendToSpeed && (
+            <button
+              onClick={handleLoadToSpeed}
+              title="Send all trimmed audios to Speed +- Audio Pool"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+              style={{
+                background: loadedSpeed ? "hsl(142,70%,40%)" : "hsl(38,92%,50%)",
+                color: "white",
+                boxShadow: loadedSpeed
+                  ? "0 1px 4px rgba(34,197,94,0.30)"
+                  : "0 1px 4px rgba(245,158,11,0.30)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = loadedSpeed
+                  ? "hsl(142,70%,34%)"
+                  : "hsl(38,92%,44%)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = loadedSpeed
+                  ? "hsl(142,70%,40%)"
+                  : "hsl(38,92%,50%)";
+              }}
+            >
+              <Zap className="w-3 h-3" />
+              {loadedSpeed ? "Loaded ✓" : "Load to Speed +-"}
             </button>
           )}
           <button

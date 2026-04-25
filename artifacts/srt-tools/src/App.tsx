@@ -131,6 +131,7 @@ export default function App() {
   const [spliterIncomingAudio, setSpliterIncomingAudio] = useState<{ files: File[]; key: number }>({ files: [], key: 0 });
   const [cuttingPlusIncomingVideos, setCuttingPlusIncomingVideos] = useState<{ files: File[]; key: number; autoLoad?: boolean; extras?: number[] }>({ files: [], key: 0 });
   const [speedIncomingVideos, setSpeedIncomingVideos] = useState<{ files: File[]; key: number }>({ files: [], key: 0 });
+  const [speedIncomingAudio, setSpeedIncomingAudio] = useState<{ files: File[]; key: number }>({ files: [], key: 0 });
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
     const saved = localStorage.getItem("srt-tools-theme");
@@ -311,6 +312,10 @@ export default function App() {
             setCuttingIncomingAudio({ files, key: Date.now() });
             handleSelectTab("cutting");
           }}
+          onSendToSpeed={(files) => {
+            setSpeedIncomingAudio({ files, key: Date.now() });
+            handleSelectTab("speed");
+          }}
         />
       </div>
 
@@ -350,7 +355,7 @@ export default function App() {
 
       {/* Speed +- — full width, hidden when inactive */}
       <div style={{ display: activeTab === "speed" ? "flex" : "none" }} className="flex-col flex-1 overflow-y-auto">
-        <SpeedPlusMinusTab incomingVideoFiles={speedIncomingVideos} />
+        <SpeedPlusMinusTab incomingVideoFiles={speedIncomingVideos} incomingAudioFiles={speedIncomingAudio} />
       </div>
 
       {/* Other tabs */}
