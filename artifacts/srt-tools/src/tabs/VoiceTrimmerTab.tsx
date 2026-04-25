@@ -171,7 +171,7 @@ export default function VoiceTrimmerTab({ onSendToCutting, onSendToSpeed, incomi
               }}
             >
               <FolderInput className="w-3 h-3" />
-              {loaded ? "Loaded ✓" : "Load to Cutting++"}
+              {loaded ? "Loaded ✓" : "Cutting++"}
             </button>
           )}
           {splitStage === "done" && trimmedCount > 0 && onSendToSpeed && (
@@ -198,7 +198,7 @@ export default function VoiceTrimmerTab({ onSendToCutting, onSendToSpeed, incomi
               }}
             >
               <Zap className="w-3 h-3" />
-              {loadedSpeed ? "Loaded ✓" : "Load to Speed +-"}
+              {loadedSpeed ? "Loaded ✓" : "Speed +-"}
             </button>
           )}
           <button
