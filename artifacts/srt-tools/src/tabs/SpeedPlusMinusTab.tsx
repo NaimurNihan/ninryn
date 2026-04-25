@@ -1626,39 +1626,67 @@ const CutterCard = forwardRef<CutterCardHandle, CutterCardProps>(
 
         setStage("cutting");
 
-        // Adjust playback rate by rewriting frame timestamps via setpts.
-        // Output duration ≈ videoDuration * factor = audioDuration.
-        // Re-encode with libx264 (stream copy can't change timestamps).
+        // Fast path: rescale input timestamps with -itsscale and stream-copy
+        // the video. No re-encode — just remux with new sample durations.
+        // Output duration ≈ videoDuration * speedFactor = audioDuration.
+        // Typically 30-50x faster than libx264 re-encode for short clips.
         // -an drops audio (output is video-only by design).
-        // Preset `ultrafast` + crf 26 prioritizes encode speed over file
-        // size — for short 12-15s clips, the size delta is negligible
-        // (~30-40%) but encode time drops ~40-50% vs `veryfast`.
-        // -threads 0 lets MT core saturate all CPU cores; ignored by ST.
-        const ptsExpr = `${speedFactor.toFixed(6)}*PTS`;
-        await eng.exec([
-          "-i",
-          inputName,
-          "-an",
-          "-vf",
-          `setpts=${ptsExpr}`,
-          "-vsync",
-          "vfr",
-          "-c:v",
-          "libx264",
-          "-preset",
-          "ultrafast",
-          "-tune",
-          "fastdecode",
-          "-crf",
-          "26",
-          "-pix_fmt",
-          "yuv420p",
-          "-threads",
-          "0",
-          "-movflags",
-          "+faststart",
-          mergedFile,
-        ]);
+        const itsScale = speedFactor.toFixed(6);
+        let usedFastPath = true;
+        try {
+          await eng.exec([
+            "-itsscale",
+            itsScale,
+            "-i",
+            inputName,
+            "-an",
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            mergedFile,
+          ]);
+        } catch (fastErr) {
+          // Fallback: re-encode with setpts. Some inputs (unusual codecs,
+          // fragmented mp4 with edit lists, etc.) won't survive a pure
+          // stream-copy timestamp rescale — fall back to the slower but
+          // bulletproof libx264 path.
+          console.warn(
+            `[Speed+- card ${index}] Fast remux failed, falling back to re-encode:`,
+            (fastErr as Error).message || fastErr,
+          );
+          usedFastPath = false;
+          try {
+            await eng.deleteFile(mergedFile);
+          } catch {
+            /* ignore */
+          }
+          const ptsExpr = `${speedFactor.toFixed(6)}*PTS`;
+          await eng.exec([
+            "-i",
+            inputName,
+            "-an",
+            "-vf",
+            `setpts=${ptsExpr}`,
+            "-vsync",
+            "vfr",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-tune",
+            "fastdecode",
+            "-crf",
+            "26",
+            "-pix_fmt",
+            "yuv420p",
+            "-threads",
+            "0",
+            "-movflags",
+            "+faststart",
+            mergedFile,
+          ]);
+        }
 
         const mergedData = await eng.readFile(mergedFile);
         const mergedBuf = mergedData as Uint8Array;
@@ -1675,6 +1703,12 @@ const CutterCard = forwardRef<CutterCardHandle, CutterCardProps>(
 
         setStage("done");
         setProgress(100);
+
+        if (!usedFastPath) {
+          console.info(
+            `[Speed+- card ${index}] Used re-encode fallback (input incompatible with fast remux).`,
+          );
+        }
 
         try {
           await eng.deleteFile(inputName);
