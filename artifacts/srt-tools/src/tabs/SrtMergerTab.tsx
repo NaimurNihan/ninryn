@@ -127,6 +127,18 @@ function stripLeadingNumber(line: string): string {
   );
 }
 
+function stripWrapperBraces(line: string): string {
+  return line.replace(/^\s*[\{\[\(]\s*([\s\S]*?)\s*[\}\]\)]\s*$/, "$1");
+}
+
+function cleanPastedSentences(text: string): string {
+  return text
+    .split("\n")
+    .map((l) => stripWrapperBraces(stripLeadingNumber(l)).trim())
+    .filter((l) => l.length > 0)
+    .join("\n");
+}
+
 function cleanSentenceBlock(text: string): string {
   return text
     .split("\n")
@@ -608,6 +620,19 @@ export default function SrtMergerTab({ setSubtitles, setFilename, onGenerated, o
                 <Textarea
                   value={sentenceText}
                   onChange={(e) => setSentenceText(e.target.value)}
+                  onPaste={(e) => {
+                    const pasted = e.clipboardData.getData("text");
+                    if (!pasted) return;
+                    const cleaned = cleanPastedSentences(pasted);
+                    if (cleaned === pasted) return;
+                    e.preventDefault();
+                    const target = e.currentTarget;
+                    const start = target.selectionStart ?? sentenceText.length;
+                    const end = target.selectionEnd ?? sentenceText.length;
+                    const before = sentenceText.slice(0, start);
+                    const after = sentenceText.slice(end);
+                    setSentenceText(before + cleaned + after);
+                  }}
                   placeholder=""
                   className="absolute inset-0 w-full h-full text-sm resize-none border-gray-200 dark:border-gray-700 focus:border-emerald-400 focus:ring-emerald-400 bg-transparent"
                 />
@@ -620,6 +645,19 @@ export default function SrtMergerTab({ setSubtitles, setFilename, onGenerated, o
                   <Textarea
                     value={addMoreText}
                     onChange={(e) => setAddMoreText(e.target.value)}
+                    onPaste={(e) => {
+                      const pasted = e.clipboardData.getData("text");
+                      if (!pasted) return;
+                      const cleaned = cleanPastedSentences(pasted);
+                      if (cleaned === pasted) return;
+                      e.preventDefault();
+                      const target = e.currentTarget;
+                      const start = target.selectionStart ?? addMoreText.length;
+                      const end = target.selectionEnd ?? addMoreText.length;
+                      const before = addMoreText.slice(0, start);
+                      const after = addMoreText.slice(end);
+                      setAddMoreText(before + cleaned + after);
+                    }}
                     placeholder={"Paste next batch here...\nOne sentence per line"}
                     className="min-h-[120px] text-sm resize-none border-gray-200 dark:border-gray-700 focus:border-emerald-400 focus:ring-emerald-400"
                     onKeyDown={(e) => {
