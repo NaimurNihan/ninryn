@@ -261,6 +261,17 @@ async function trimHeadAccurateOnce(
     // -c:a copy → stream-copy audio (lossless, fast).
     // -avoid_negative_ts make_zero → reset timestamps to 0 at new start.
     // -movflags +faststart → web-friendly MP4 atom layout.
+    //
+    // Encoder is tuned aggressively for SPEED:
+    //   preset ultrafast → fastest tier (was veryfast; ~2x faster)
+    //   crf 22           → still visually clean (was 18; ~1.5x faster, file
+    //                      bigger but encode much faster)
+    //   tune fastdecode  → simpler bitstream, faster encode + decode
+    //   tune zerolatency → no frame reordering, lowest latency
+    //   x264-params      → kill B-frames, mb-tree, lookahead — these are
+    //                      multi-pass features that hurt single-pass speed
+    //   threads 0        → use all CPU cores (MT core only; ignored on ST)
+    //   bf 0             → no B-frames (matches x264-params, belt+suspenders)
     const args = [
       "-i",
       inputName,
@@ -269,9 +280,19 @@ async function trimHeadAccurateOnce(
       "-c:v",
       "libx264",
       "-preset",
-      "veryfast",
+      "ultrafast",
+      "-tune",
+      "fastdecode,zerolatency",
       "-crf",
-      "18",
+      "22",
+      "-x264-params",
+      "no-mbtree=1:rc-lookahead=0:sync-lookahead=0:bframes=0",
+      "-bf",
+      "0",
+      "-pix_fmt",
+      "yuv420p",
+      "-threads",
+      "0",
       "-c:a",
       "copy",
       "-avoid_negative_ts",
