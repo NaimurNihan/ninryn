@@ -1,0 +1,82 @@
+Apnar Video Spliter e ekhon Option 1 (Engine Recycle) + kichu safety improvements implement korechi. Niche details a bolchi:
+
+🛠️ Ki ki kora hoyece — step by step
+1. Auto Engine Recycle (mool fix)
+Protyek 10 ta clip cut hoye gele:
+   ↓
+Purono ffmpeg engine band kore di (terminate)
+   ↓  
+Notun ekta fresh ffmpeg engine create kori
+   ↓
+Video file ti notun engine e abar load kori
+   ↓
+Porer 10 ta clip cut shuru
+
+Keno: ffmpeg.wasm browser memory te ekta box (~2GB max) e chole. Protyek cut er por kichu memory jome thake — chere day na. 10 clip er por box vore jay → engine band kore notun box dile memory clean hoy.
+
+Setting: RECYCLE_EVERY = 10 (code er top e ase, beshi-kom korte parben)
+
+2. Auto Retry on Memory Error
+Clip cut korar somoy memory error asle:
+   ↓
+Sathe sathe engine recycle
+   ↓
+Same clip ekbar abar try
+   ↓
+Successful hole save, na hole error mark
+
+Keno: Onek somoy 10 er age o memory limit hit korte pare (jodi clip beshi boro hoy). Manual wait kora chara automatic e retry kore neoa hoy.
+
+Detect kora hoy ei pattern gulo dia:
+
+memory access out of bounds
+out of memory
+abort
+RuntimeError
+not loaded
+3. Buffer Detachment Fix (very important)
+ffmpeg.wasm er hidden behavior: writeFile() korle apnar video data tar memory ti transfer kore worker e nia jay (copy na). Phole:
+
+Original data detached (khali) hoye jay
+Recycle korar somoy abar likhle → fail (data nei)
+"ffmpeg is not loaded" error
+Fix: Protyek writeFile er age data ti ek-copy (clone) kore di. Master copy ti always intact thake.
+
+Master video data (untouched)
+        ↓ copy
+   Fresh copy ──→ ffmpeg writeFile (transfer/detach this copy)
+        
+Master ekhono intact → next recycle e abar copy bana jabe
+
+4. Output File Cleanup
+Protyek clip cut hone JS memory te niye nile, sathe sathe MEMFS theke shei output file delete kore di. Eivabe ffmpeg er internal memory te jome thake na — extra space pae.
+
+5. Recycle Failure Safe Handling
+Age recycle fail hole error chup chap chere old (mara) engine continue use hocchilo → cascading failure. Ekhon:
+
+Recycle fail hole sei clip ti error mark hoy
+Porer iteration e abar fresh engine create korar chesta hoy
+Ek tar failure baki sob er upor cascade kore na
+🎯 Final flow ekhon eirokom:
+User SRT + video upload kore
+   ↓
+Video ek bar memory te load (master copy)
+   ↓
+Clip 1-10: ek engine, fresh copy diye writeFile
+   ↓
+Recycle (engine band → notun) 
+   ↓
+Clip 11-20: notun engine, abar fresh copy
+   ↓
+Recycle...
+   ↓ (continue forever)
+   
+Kono clip e error asle → engine recycle + retry
+Recycle e error asle → sei clip error mark, porer e fresh start
+
+✅ Result
+100, 200, 500+ clip — sob cut hobe
+Browser e 100% chole (server lage na)
+ek-ekta clip fail korle baki gulo affected hoy na
+"memory access out of bounds" error practically eliminated
+Test korar somoy lokkho korben: Recycle hole UI te ekta short pause asbe (2-3 second), tar por porer batch shuru hobe — etai expected behavior.

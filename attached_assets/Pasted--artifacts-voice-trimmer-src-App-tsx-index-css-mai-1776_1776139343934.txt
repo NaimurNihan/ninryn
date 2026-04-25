@@ -1,0 +1,784 @@
+ফাইল স্ট্রাকচার
+artifacts/voice-trimmer/
+├── src/
+│   ├── App.tsx
+│   ├── index.css
+│   ├── main.tsx  (unchanged/auto-generated)
+│   ├── pages/
+│   │   └── Home.tsx
+│   ├── components/
+│   │   ├── AudioCard.tsx
+│   │   └── UploadBox.tsx
+│   ├── hooks/
+│   │   └── useAudioAnalysis.ts
+│   └── lib/
+│       └── wavEncoder.ts
+
+📄 src/App.tsx
+import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Toaster } from "@/components/ui/toaster";
+import Home from "@/pages/Home";
+function Router() {
+  return (
+    <Switch>
+      <Route path="/" component={Home} />
+    </Switch>
+  );
+}
+function App() {
+  return (
+    <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+      <Router />
+      <Toaster />
+    </WouterRouter>
+  );
+}
+export default App;
+
+📄 src/index.css
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+@custom-variant dark (&:is(.dark *));
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-card-border: hsl(var(--card-border));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --font-sans: var(--app-font-sans);
+  --font-mono: var(--app-font-mono);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+:root {
+  --background: 220 20% 97%;
+  --foreground: 220 20% 12%;
+  --border: 220 15% 88%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 20% 12%;
+  --card-border: 220 15% 90%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 20% 12%;
+  --primary: 185 65% 36%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 15% 94%;
+  --secondary-foreground: 220 20% 30%;
+  --muted: 220 15% 94%;
+  --muted-foreground: 220 10% 52%;
+  --accent: 185 65% 36%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 220 15% 88%;
+  --ring: 185 65% 36%;
+  --app-font-sans: 'Inter', sans-serif;
+  --app-font-mono: 'JetBrains Mono', Menlo, monospace;
+  --radius: 0.5rem;
+}
+@layer base {
+  * { @apply border-border; }
+  body { @apply font-sans antialiased bg-background text-foreground; }
+}
+
+📄 src/pages/Home.tsx
+import { useState } from "react";
+import { useAudioAnalysis } from "@/hooks/useAudioAnalysis";
+import UploadBox from "@/components/UploadBox";
+import AudioCard from "@/components/AudioCard";
+import { Scissors, Trash2 } from "lucide-react";
+type SplitStage = "idle" | "preview" | "trimming" | "done";
+export default function Home() {
+  const { audioFiles, addFiles, removeFile, trimAllFiles, resetTrim } = useAudioAnalysis();
+  const [splitStage, setSplitStage] = useState<SplitStage>("idle");
+  const readyCount = audioFiles.filter((f) => f.status === "ready" && !f.isTrimmed).length;
+  const trimmedCount = audioFiles.filter((f) => f.isTrimmed).length;
+  const handleSplitClick = async () => {
+    if (splitStage === "idle") {
+      setSplitStage("preview");
+    } else if (splitStage === "preview") {
+      setSplitStage("trimming");
+      await trimAllFiles();
+      setSplitStage("done");
+    }
+  };
+  const handleClear = () => {
+    resetTrim();
+    setSplitStage("idle");
+    audioFiles.forEach((f) => removeFile(f.id));
+  };
+  const splitLabel =
+    splitStage === "idle" ? "Split" :
+    splitStage === "preview" ? "Confirm Cut" :
+    splitStage === "trimming" ? "Processing…" : "Split";
+  const splitDisabled = splitStage === "trimming" || readyCount === 0;
+  return (
+    <div className="min-h-screen" style={{ background: "hsl(220,20%,97%)" }}>
+      {/* Header */}
+      <header
+        className="sticky top-0 z-10"
+        style={{
+          background: "rgba(255,255,255,0.88)",
+          backdropFilter: "blur(12px)",
+          borderBottom: "1px solid hsl(220,15%,90%)",
+        }}
+      >
+        <div className="max-w-3xl mx-auto px-6 py-3 flex items-center gap-2.5">
+          <div className="p-1.5 rounded-lg" style={{ background: "hsl(185,65%,36%,0.10)" }}>
+            <Scissors className="w-4 h-4" style={{ color: "hsl(185,65%,36%)" }} />
+          </div>
+          <div>
+            <h1 className="text-sm font-bold leading-tight" style={{ color: "hsl(220,20%,14%)" }}>
+              Voice Silence Trimmer
+            </h1>
+            <p className="text-[11px]" style={{ color: "hsl(220,10%,55%)" }}>
+              Auto-detect and remove silence from audio files
+            </p>
+          </div>
+        </div>
+      </header>
+      <main className="max-w-3xl mx-auto px-6 py-5 flex flex-col gap-3">
+        {/* Upload card */}
+        <UploadBox onFiles={addFiles} />
+        {/* Controls card */}
+        <div
+          className="rounded-xl flex items-center justify-between px-5 py-3"
+          style={{
+            background: "white",
+            border: "1px solid hsl(220,15%,90%)",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
+          }}
+        >
+          <div>
+            {audioFiles.length === 0 ? (
+              <p className="text-xs" style={{ color: "hsl(220,10%,62%)" }}>
+                Upload files to enable controls
+              </p>
+            ) : splitStage === "done" ? (
+              <p className="text-xs" style={{ color: "hsl(185,65%,34%)" }}>
+                ✓ {trimmedCount} file{trimmedCount !== 1 ? "s" : ""} trimmed — download each below
+              </p>
+            ) : splitStage === "preview" ? (
+              <p className="text-xs" style={{ color: "hsl(220,10%,45%)" }}>
+                {readyCount} file{readyCount !== 1 ? "s" : ""} ready to cut — click Confirm Cut to proceed
+              </p>
+            ) : (
+              <p className="text-xs" style={{ color: "hsl(220,10%,55%)" }}>
+                {audioFiles.length} file{audioFiles.length !== 1 ? "s" : ""} loaded — {readyCount} ready to trim
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Clear button */}
+            <button
+              onClick={handleClear}
+              disabled={audioFiles.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-35 disabled:cursor-not-allowed"
+              style={{ background: "hsl(220,15%,94%)", color: "hsl(220,20%,40%)" }}
+              onMouseEnter={(e) => { if (!e.currentTarget.disabled) { e.currentTarget.style.background = "hsl(0,72%,51%,0.10)"; e.currentTarget.style.color = "#ef4444"; } }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "hsl(220,15%,94%)"; e.currentTarget.style.color = "hsl(220,20%,40%)"; }}
+            >
+              <Trash2 className="w-3 h-3" />
+              Clear All
+            </button>
+            {/* Split button */}
+            {splitStage !== "done" && (
+              <button
+                onClick={handleSplitClick}
+                disabled={splitDisabled}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{
+                  background: splitStage === "preview" ? "hsl(185,65%,30%)" : "hsl(185,65%,36%)",
+                  color: "white",
+                  boxShadow: splitStage === "preview"
+                    ? "0 0 0 2px hsl(185,65%,70%)"
+                    : "0 1px 4px rgba(15,160,155,0.25)",
+                }}
+                onMouseEnter={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.background = "hsl(185,65%,28%)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = splitStage === "preview" ? "hsl(185,65%,30%)" : "hsl(185,65%,36%)"; }}
+              >
+                <Scissors className="w-3 h-3" />
+                {splitLabel}
+              </button>
+            )}
+          </div>
+        </div>
+        {/* Audio file cards */}
+        {audioFiles.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {audioFiles.map((audio) => (
+              <AudioCard
+                key={audio.id}
+                audio={audio}
+                onRemove={removeFile}
+                splitStage={splitStage}
+              />
+            ))}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+📄 src/components/UploadBox.tsx
+import { useRef, useState } from "react";
+import { Upload, Music2 } from "lucide-react";
+interface UploadBoxProps {
+  onFiles: (files: File[]) => void;
+}
+const ACCEPTED_EXT = /\.(mp3|wav|ogg|m4a|aac|flac|webm)$/i;
+export default function UploadBox({ onFiles }: UploadBoxProps) {
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const handleFiles = (fileList: FileList | null) => {
+    if (!fileList) return;
+    const valid = Array.from(fileList).filter(
+      (f) => f.type.startsWith("audio/") || ACCEPTED_EXT.test(f.name)
+    );
+    if (valid.length > 0) onFiles(valid);
+  };
+  return (
+    <div
+      className="rounded-xl cursor-pointer select-none transition-all"
+      style={{
+        background: dragging ? "hsl(185,65%,36%,0.04)" : "white",
+        border: dragging ? "1.5px dashed hsl(185,65%,50%)" : "1.5px dashed hsl(220,15%,82%)",
+        boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+        padding: "20px 24px",
+      }}
+      onClick={() => inputRef.current?.click()}
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files); }}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept="audio/*"
+        multiple
+        className="hidden"
+        onChange={(e) => handleFiles(e.target.files)}
+      />
+      <div className="flex items-center gap-4">
+        <div
+          className="p-3 rounded-xl shrink-0"
+          style={{ background: dragging ? "hsl(185,65%,36%,0.12)" : "hsl(220,15%,96%)" }}
+        >
+          <Music2 className="w-5 h-5" style={{ color: dragging ? "hsl(185,65%,36%)" : "hsl(220,10%,55%)" }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold" style={{ color: "hsl(220,20%,20%)" }}>
+            Drop audio files here or click to browse
+          </p>
+          <p className="text-xs mt-0.5" style={{ color: "hsl(220,10%,58%)" }}>
+            MP3, WAV, M4A, AAC, FLAC, OGG supported
+          </p>
+        </div>
+        <div
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shrink-0"
+          style={{
+            background: dragging ? "hsl(185,65%,36%)" : "hsl(220,15%,94%)",
+            color: dragging ? "white" : "hsl(220,20%,40%)",
+          }}
+        >
+          <Upload className="w-3.5 h-3.5" />
+          Upload Files
+        </div>
+      </div>
+    </div>
+  );
+}
+
+📄 src/components/AudioCard.tsx
+import { useEffect, useRef, useState } from "react";
+import { Play, Pause, Trash2, Music, Download, Scissors } from "lucide-react";
+import { AudioFile } from "@/hooks/useAudioAnalysis";
+type SplitStage = "idle" | "preview" | "trimming" | "done";
+interface AudioCardProps {
+  audio: AudioFile;
+  onRemove: (id: string) => void;
+  splitStage: SplitStage;
+}
+function formatTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+function formatSec(seconds: number): string {
+  return seconds.toFixed(1) + "s";
+}
+function Waveform({ data, duration, playProgress }: {
+  data: Float32Array;
+  duration: number;
+  playProgress: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || data.length === 0) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.offsetWidth;
+    const H = canvas.offsetHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(0, 0, W, H);
+    const mid = H / 2;
+    const numPoints = Math.min(data.length, W * 2);
+    const step = data.length / numPoints;
+    const playX = playProgress * W;
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0,    "rgba(15,160,155,0.80)");
+    grad.addColorStop(0.35, "rgba(15,160,155,0.95)");
+    grad.addColorStop(0.5,  "rgba(15,160,155,0.20)");
+    grad.addColorStop(0.65, "rgba(15,160,155,0.95)");
+    grad.addColorStop(1,    "rgba(15,160,155,0.80)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    for (let i = 0; i <= numPoints; i++) {
+      const x = (i / numPoints) * W;
+      const idx = Math.min(Math.floor(i * step), data.length - 1);
+      const amp = Math.min(data[idx] || 0, 1);
+      const y = mid - amp * mid * 0.90;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    for (let i = numPoints; i >= 0; i--) {
+      const x = (i / numPoints) * W;
+      const idx = Math.min(Math.floor(i * step), data.length - 1);
+      const amp = Math.min(data[idx] || 0, 1);
+      const y = mid + amp * mid * 0.90;
+      ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    if (playX > 0) {
+      ctx.fillStyle = "rgba(30,30,30,0.45)";
+      ctx.fillRect(playX - 1, 3, 2, H - 6);
+    }
+  }, [data, duration, playProgress]);
+  return (
+    <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />
+  );
+}
+function usePlayer(file: File | Blob) {
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    const url = URL.createObjectURL(file);
+    const el = new Audio(url);
+    audioRef.current = el;
+    setPlaying(false);
+    setCurrentTime(0);
+    el.addEventListener("timeupdate", () => setCurrentTime(el.currentTime));
+    el.addEventListener("ended", () => { setPlaying(false); setCurrentTime(0); });
+    return () => { el.pause(); URL.revokeObjectURL(url); };
+  }, [file]);
+  const toggle = () => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (playing) { el.pause(); setPlaying(false); }
+    else { el.play(); setPlaying(true); }
+  };
+  return { playing, currentTime, toggle };
+}
+export default function AudioCard({ audio, onRemove, splitStage }: AudioCardProps) {
+  const original = usePlayer(audio.file);
+  const trimmedPlayer = usePlayer(audio.trimmedBlob ?? audio.file);
+  const showTrimmed = audio.isTrimmed;
+  const activePlayer = showTrimmed ? trimmedPlayer : original;
+  const activeDuration = showTrimmed ? (audio.trimmedDuration ?? 0) : audio.duration;
+  const activeWaveform = showTrimmed ? (audio.trimmedWaveformData ?? audio.waveformData) : audio.waveformData;
+  const playProgress = activeDuration > 0 ? activePlayer.currentTime / activeDuration : 0;
+  const endSilenceDuration = audio.silence ? audio.duration - audio.silence.endSilenceStart : 0;
+  const startSilenceDuration = audio.silence?.startSilenceEnd ?? 0;
+  const totalCutDuration = startSilenceDuration + endSilenceDuration;
+  const timeMarkers = activeDuration > 0
+    ? [0, activeDuration * 0.25, activeDuration * 0.5, activeDuration * 0.75, activeDuration].map(formatSec)
+    : [];
+  const handleDownload = () => {
+    if (!audio.trimmedBlob) return;
+    const url = URL.createObjectURL(audio.trimmedBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = audio.name.replace(/\.[^.]+$/, "") + "_trimmed.wav";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <div
+      className="rounded-xl overflow-hidden transition-all"
+      style={{
+        background: "white",
+        border: showTrimmed ? "1px solid hsl(185,65%,70%)" : "1px solid hsl(220,15%,88%)",
+        boxShadow: showTrimmed ? "0 1px 6px rgba(15,160,155,0.12)" : "0 1px 3px rgba(0,0,0,0.06)",
+      }}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-3 py-1.5"
+        style={{
+          background: showTrimmed ? "hsl(185,60%,97%)" : "hsl(220,20%,98%)",
+          borderBottom: "1px solid hsl(220,15%,91%)",
+        }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <Music className="w-3.5 h-3.5 shrink-0" style={{ color: "hsl(185,65%,38%)" }} />
+          <span className="text-xs font-semibold truncate" style={{ color: "hsl(220,20%,18%)" }}>
+            {audio.name}
+          </span>
+          {showTrimmed && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0"
+              style={{ background: "hsl(185,65%,88%)", color: "hsl(185,65%,28%)" }}
+            >
+              Trimmed
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 ml-3 shrink-0">
+          {audio.status === "ready" && (
+            <>
+              <span className="text-[11px] font-mono" style={{ color: "hsl(220,10%,52%)" }}>
+                {formatTime(activeDuration)}
+              </span>
+              {!showTrimmed && audio.silence && (
+                <span
+                  className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                  style={{ background: "hsl(185,60%,94%)", color: "hsl(185,65%,30%)" }}
+                >
+                  Voice {formatSec(audio.silence.startSilenceEnd)} → {formatSec(audio.silence.endSilenceStart)}
+                </span>
+              )}
+              {showTrimmed && (
+                <button
+                  onClick={handleDownload}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-all"
+                  style={{ background: "hsl(185,65%,36%)", color: "white" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "hsl(185,65%,30%)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "hsl(185,65%,36%)")}
+                >
+                  <Download className="w-3 h-3" />
+                  Download
+                </button>
+              )}
+            </>
+          )}
+          {audio.status === "analyzing" && (
+            <span className="text-[10px] animate-pulse" style={{ color: "hsl(220,10%,60%)" }}>
+              Analyzing...
+            </span>
+          )}
+          {audio.status === "error" && (
+            <span className="text-[10px] text-red-500">Load failed</span>
+          )}
+          <button
+            onClick={activePlayer.toggle}
+            disabled={audio.status !== "ready"}
+            className="w-6 h-6 rounded-full flex items-center justify-center transition-all disabled:opacity-30"
+            style={{ background: "hsl(185,65%,36%,0.10)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "hsl(185,65%,36%,0.20)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "hsl(185,65%,36%,0.10)")}
+          >
+            {activePlayer.playing
+              ? <Pause className="w-3 h-3" style={{ color: "hsl(185,65%,36%)" }} />
+              : <Play className="w-3 h-3 ml-0.5" style={{ color: "hsl(185,65%,36%)" }} />
+            }
+          </button>
+          <button
+            onClick={() => onRemove(audio.id)}
+            className="w-6 h-6 rounded-full flex items-center justify-center transition-all"
+            onMouseEnter={(e) => (e.currentTarget.style.background = "hsl(0,72%,51%,0.10)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            <Trash2 className="w-3 h-3" style={{ color: "hsl(220,10%,65%)" }} />
+          </button>
+        </div>
+      </div>
+      {/* Waveform */}
+      <div className="relative" style={{ height: "62px", background: "#f8fafc" }}>
+        {audio.status === "analyzing" && (
+          <div className="absolute inset-0 flex items-center justify-center gap-1">
+            {[0.4, 0.7, 1, 0.7, 0.4].map((h, i) => (
+              <div
+                key={i}
+                className="w-0.5 rounded-full animate-pulse"
+                style={{ height: `${h * 28}px`, background: "hsl(185,65%,60%)", animationDelay: `${i * 0.12}s` }}
+              />
+            ))}
+          </div>
+        )}
+        {audio.status === "error" && (
+          <div className="absolute inset-0 flex items-center justify-center text-xs" style={{ color: "hsl(220,10%,65%)" }}>
+            Could not load file
+          </div>
+        )}
+        {audio.status === "ready" && activeWaveform.length > 0 && (
+          <div className="absolute inset-0">
+            <Waveform data={activeWaveform} duration={activeDuration} playProgress={playProgress} />
+          </div>
+        )}
+        {/* Preview overlays — shown on first Split click */}
+        {splitStage === "preview" && audio.status === "ready" && audio.silence && !audio.isTrimmed && (
+          <>
+            {startSilenceDuration > 0.05 && (
+              <div
+                className="absolute top-0 bottom-0 left-0 flex items-center justify-center"
+                style={{
+                  width: `${(startSilenceDuration / audio.duration) * 100}%`,
+                  background: "rgba(239,68,68,0.12)",
+                  borderRight: "1.5px dashed rgba(239,68,68,0.5)",
+                }}
+              >
+                <span className="text-[9px] font-mono text-red-400">-{formatSec(startSilenceDuration)}</span>
+              </div>
+            )}
+            <div
+              className="absolute top-0 bottom-0 right-0 flex items-center justify-center"
+              style={{
+                width: `${(endSilenceDuration / audio.duration) * 100}%`,
+                background: "rgba(239,68,68,0.12)",
+                borderLeft: "1.5px dashed rgba(239,68,68,0.5)",
+              }}
+            >
+              <span className="text-[9px] font-mono text-red-400">-{formatSec(endSilenceDuration)}</span>
+            </div>
+            <div
+              className="absolute bottom-1 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded text-[9px] font-medium flex items-center gap-1"
+              style={{ background: "rgba(239,68,68,0.10)", color: "#ef4444" }}
+            >
+              <Scissors className="w-2.5 h-2.5" />
+              Cut {formatSec(totalCutDuration)} total
+            </div>
+          </>
+        )}
+      </div>
+      {/* Time markers */}
+      {audio.status === "ready" && activeDuration > 0 && (
+        <div
+          className="flex justify-between px-2 pt-0.5 pb-1"
+          style={{ background: "#f8fafc", borderTop: "1px solid hsl(220,15%,92%)" }}
+        >
+          {timeMarkers.map((label, i) => (
+            <span key={i} className="text-[9px] font-mono" style={{ color: "hsl(220,10%,70%)" }}>
+              {label}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+📄 src/hooks/useAudioAnalysis.ts
+import { useState, useCallback } from "react";
+import { encodeWAV } from "@/lib/wavEncoder";
+export interface SilenceRange {
+  startSilenceEnd: number;
+  endSilenceStart: number;
+  duration: number;
+}
+export interface AudioFile {
+  id: string;
+  file: File;
+  name: string;
+  duration: number;
+  waveformData: Float32Array;
+  silence: SilenceRange | null;
+  status: "analyzing" | "ready" | "error";
+  isTrimmed: boolean;
+  trimmedBlob?: Blob;
+  trimmedDuration?: number;
+  trimmedWaveformData?: Float32Array;
+}
+const SILENCE_THRESHOLD = 0.01;
+const MIN_SILENCE_DURATION = 0.1;
+function detectSilence(channelData: Float32Array, sampleRate: number): SilenceRange {
+  const totalDuration = channelData.length / sampleRate;
+  const minSilenceSamples = Math.floor(MIN_SILENCE_DURATION * sampleRate);
+  let startSilenceEnd = 0;
+  for (let i = 0; i < channelData.length; i++) {
+    if (Math.abs(channelData[i]) > SILENCE_THRESHOLD) {
+      const windowStart = Math.max(0, i - minSilenceSamples);
+      startSilenceEnd = windowStart / sampleRate;
+      break;
+    }
+  }
+  let endSilenceStart = totalDuration;
+  for (let i = channelData.length - 1; i >= 0; i--) {
+    if (Math.abs(channelData[i]) > SILENCE_THRESHOLD) {
+      const windowEnd = Math.min(channelData.length, i + minSilenceSamples);
+      endSilenceStart = windowEnd / sampleRate;
+      break;
+    }
+  }
+  return { startSilenceEnd, endSilenceStart, duration: totalDuration };
+}
+function downsample(channelData: Float32Array, targetLength: number): Float32Array {
+  const result = new Float32Array(targetLength);
+  const blockSize = Math.max(1, Math.floor(channelData.length / targetLength));
+  for (let i = 0; i < targetLength; i++) {
+    let peak = 0;
+    const start = i * blockSize;
+    const end = Math.min(start + blockSize, channelData.length);
+    for (let j = start; j < end; j++) {
+      const v = Math.abs(channelData[j]);
+      if (v > peak) peak = v;
+    }
+    result[i] = peak;
+  }
+  return result;
+}
+export function useAudioAnalysis() {
+  const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
+  const addFiles = useCallback(async (files: File[]) => {
+    const newEntries: AudioFile[] = files.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      name: file.name,
+      duration: 0,
+      waveformData: new Float32Array(0),
+      silence: null,
+      status: "analyzing" as const,
+      isTrimmed: false,
+    }));
+    setAudioFiles((prev) => [...prev, ...newEntries]);
+    for (const entry of newEntries) {
+      try {
+        const arrayBuffer = await entry.file.arrayBuffer();
+        const audioCtx = new AudioContext();
+        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        await audioCtx.close();
+        const channelData = audioBuffer.getChannelData(0);
+        const waveformData = downsample(channelData, 1500);
+        const silence = detectSilence(channelData, audioBuffer.sampleRate);
+        setAudioFiles((prev) =>
+          prev.map((f) =>
+            f.id === entry.id
+              ? { ...f, duration: audioBuffer.duration, waveformData, silence, status: "ready" as const }
+              : f
+          )
+        );
+      } catch {
+        setAudioFiles((prev) =>
+          prev.map((f) =>
+            f.id === entry.id ? { ...f, status: "error" as const } : f
+          )
+        );
+      }
+    }
+  }, []);
+  const trimAllFiles = useCallback(async () => {
+    const readyFiles = audioFiles.filter(
+      (f) => f.status === "ready" && f.silence && !f.isTrimmed
+    );
+    for (const entry of readyFiles) {
+      if (!entry.silence) continue;
+      try {
+        const arrayBuffer = await entry.file.arrayBuffer();
+        const audioCtx = new AudioContext();
+        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        await audioCtx.close();
+        const sampleRate = audioBuffer.sampleRate;
+        const startSample = Math.floor(entry.silence.startSilenceEnd * sampleRate);
+        const endSample = Math.floor(entry.silence.endSilenceStart * sampleRate);
+        const trimmedBlob = encodeWAV(audioBuffer, startSample, endSample);
+        const trimmedDuration = entry.silence.endSilenceStart - entry.silence.startSilenceEnd;
+        const trimmedChannelData = audioBuffer.getChannelData(0).slice(startSample, endSample);
+        const trimmedWaveformData = downsample(trimmedChannelData, 1500);
+        setAudioFiles((prev) =>
+          prev.map((f) =>
+            f.id === entry.id
+              ? { ...f, isTrimmed: true, trimmedBlob, trimmedDuration, trimmedWaveformData }
+              : f
+          )
+        );
+      } catch {
+        // skip on error
+      }
+    }
+  }, [audioFiles]);
+  const removeFile = useCallback((id: string) => {
+    setAudioFiles((prev) => prev.filter((f) => f.id !== id));
+  }, []);
+  const resetTrim = useCallback(() => {
+    setAudioFiles((prev) =>
+      prev.map((f) => ({
+        ...f,
+        isTrimmed: false,
+        trimmedBlob: undefined,
+        trimmedDuration: undefined,
+        trimmedWaveformData: undefined,
+      }))
+    );
+  }, []);
+  return { audioFiles, addFiles, removeFile, trimAllFiles, resetTrim };
+}
+
+📄 src/lib/wavEncoder.ts
+export function encodeWAV(
+  audioBuffer: AudioBuffer,
+  startSample: number,
+  endSample: number
+): Blob {
+  const numChannels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const length = endSample - startSample;
+  const bytesPerSample = 2;
+  const blockAlign = numChannels * bytesPerSample;
+  const dataSize = length * blockAlign;
+  const buf = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buf);
+  const ws = (off: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
+  };
+  ws(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  ws(8, "WAVE");
+  ws(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  ws(36, "data");
+  view.setUint32(40, dataSize, true);
+  let offset = 44;
+  for (let i = startSample; i < endSample; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const sample = audioBuffer.getChannelData(ch)[i];
+      const s = Math.max(-1, Math.min(1, sample));
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      offset += 2;
+    }
+  }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+এই ৭টা file দিয়ে পুরো website rebuild করা সম্ভব। Replit-এ নতুন React + Vite project বানিয়ে এই files গুলো paste করলেই exact same app পাবে। Framework হলো React + Vite + TypeScript + Tailwind CSS, packages লাগবে: lucide-react, wouter।

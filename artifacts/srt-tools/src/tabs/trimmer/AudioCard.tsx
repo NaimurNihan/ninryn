@@ -1,0 +1,317 @@
+import { useEffect, useRef, useState } from "react";
+import { Play, Pause, Trash2, Music, Download, Scissors } from "lucide-react";
+import { AudioFile } from "@/hooks/useAudioAnalysis";
+import { useDarkMode } from "@/hooks/useDarkMode";
+
+type SplitStage = "idle" | "preview" | "trimming" | "done";
+
+interface AudioCardProps {
+  audio: AudioFile;
+  onRemove: (id: string) => void;
+  splitStage: SplitStage;
+}
+
+function formatTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function formatSec(seconds: number): string {
+  return seconds.toFixed(1) + "s";
+}
+
+function Waveform({ data, duration, playProgress }: {
+  data: Float32Array;
+  duration: number;
+  playProgress: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const isDark = useDarkMode();
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || data.length === 0) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.offsetWidth;
+    const H = canvas.offsetHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = isDark ? "hsl(220,18%,10%)" : "#f8fafc";
+    ctx.fillRect(0, 0, W, H);
+    const mid = H / 2;
+    const numPoints = Math.min(data.length, W * 2);
+    const step = data.length / numPoints;
+    const playX = playProgress * W;
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0,    "rgba(15,160,155,0.80)");
+    grad.addColorStop(0.35, "rgba(15,160,155,0.95)");
+    grad.addColorStop(0.5,  "rgba(15,160,155,0.20)");
+    grad.addColorStop(0.65, "rgba(15,160,155,0.95)");
+    grad.addColorStop(1,    "rgba(15,160,155,0.80)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    for (let i = 0; i <= numPoints; i++) {
+      const x = (i / numPoints) * W;
+      const idx = Math.min(Math.floor(i * step), data.length - 1);
+      const amp = Math.min(data[idx] || 0, 1);
+      const y = mid - amp * mid * 0.90;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    for (let i = numPoints; i >= 0; i--) {
+      const x = (i / numPoints) * W;
+      const idx = Math.min(Math.floor(i * step), data.length - 1);
+      const amp = Math.min(data[idx] || 0, 1);
+      const y = mid + amp * mid * 0.90;
+      ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    if (playX > 0) {
+      ctx.fillStyle = "rgba(30,30,30,0.45)";
+      ctx.fillRect(playX - 1, 3, 2, H - 6);
+    }
+  }, [data, duration, playProgress, isDark]);
+
+  return (
+    <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />
+  );
+}
+
+function usePlayer(file: File | Blob) {
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    const url = URL.createObjectURL(file);
+    const el = new Audio(url);
+    audioRef.current = el;
+    setPlaying(false);
+    setCurrentTime(0);
+    el.addEventListener("timeupdate", () => setCurrentTime(el.currentTime));
+    el.addEventListener("ended", () => { setPlaying(false); setCurrentTime(0); });
+    return () => { el.pause(); URL.revokeObjectURL(url); };
+  }, [file]);
+
+  const toggle = () => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (playing) { el.pause(); setPlaying(false); }
+    else { el.play(); setPlaying(true); }
+  };
+
+  return { playing, currentTime, toggle };
+}
+
+export default function AudioCard({ audio, onRemove, splitStage }: AudioCardProps) {
+  const isDark = useDarkMode();
+  const original = usePlayer(audio.file);
+  const trimmedPlayer = usePlayer(audio.trimmedBlob ?? audio.file);
+  const showTrimmed = audio.isTrimmed;
+  const activePlayer = showTrimmed ? trimmedPlayer : original;
+  const activeDuration = showTrimmed ? (audio.trimmedDuration ?? 0) : audio.duration;
+  const activeWaveform = showTrimmed ? (audio.trimmedWaveformData ?? audio.waveformData) : audio.waveformData;
+  const playProgress = activeDuration > 0 ? activePlayer.currentTime / activeDuration : 0;
+  const endSilenceDuration = audio.silence ? audio.duration - audio.silence.endSilenceStart : 0;
+  const startSilenceDuration = audio.silence?.startSilenceEnd ?? 0;
+  const totalCutDuration = startSilenceDuration + endSilenceDuration;
+
+  const timeMarkers = activeDuration > 0
+    ? [0, activeDuration * 0.25, activeDuration * 0.5, activeDuration * 0.75, activeDuration].map(formatSec)
+    : [];
+
+  const handleDownload = () => {
+    if (!audio.trimmedBlob) return;
+    const url = URL.createObjectURL(audio.trimmedBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = audio.name.replace(/\.[^.]+$/, "") + "_trimmed.wav";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  return (
+    <div
+      className="rounded-xl overflow-hidden transition-all duration-300"
+      style={{
+        background: isDark ? "hsl(220,18%,14%)" : "white",
+        border: showTrimmed
+          ? `1px solid ${isDark ? "hsl(185,55%,32%)" : "hsl(185,65%,70%)"}`
+          : `1px solid ${isDark ? "hsl(220,15%,24%)" : "hsl(220,15%,88%)"}`,
+        boxShadow: showTrimmed
+          ? `0 1px 6px ${isDark ? "rgba(15,160,155,0.18)" : "rgba(15,160,155,0.12)"}`
+          : `0 1px 3px ${isDark ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.06)"}`,
+      }}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-3 py-1.5"
+        style={{
+          background: showTrimmed
+            ? (isDark ? "hsl(185,30%,14%)" : "hsl(185,60%,97%)")
+            : (isDark ? "hsl(220,18%,12%)" : "hsl(220,20%,98%)"),
+          borderBottom: `1px solid ${isDark ? "hsl(220,15%,20%)" : "hsl(220,15%,91%)"}`,
+        }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <Music className="w-3.5 h-3.5 shrink-0" style={{ color: isDark ? "hsl(185,55%,55%)" : "hsl(185,65%,38%)" }} />
+          <span className="text-xs font-semibold truncate" style={{ color: isDark ? "hsl(220,10%,90%)" : "hsl(220,20%,18%)" }}>
+            {audio.name}
+          </span>
+          {showTrimmed && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0"
+              style={{ background: "hsl(185,65%,88%)", color: "hsl(185,65%,28%)" }}
+            >
+              Trimmed
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 ml-3 shrink-0">
+          {audio.status === "ready" && (
+            <>
+              <span className="text-[11px] font-mono" style={{ color: "hsl(220,10%,52%)" }}>
+                {formatTime(activeDuration)}
+              </span>
+              {!showTrimmed && audio.silence && (
+                <span
+                  className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                  style={{ background: "hsl(185,60%,94%)", color: "hsl(185,65%,30%)" }}
+                >
+                  Voice {formatSec(audio.silence.startSilenceEnd)} → {formatSec(audio.silence.endSilenceStart)}
+                </span>
+              )}
+              {showTrimmed && (
+                <button
+                  onClick={handleDownload}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-all"
+                  style={{ background: "hsl(185,65%,36%)", color: "white" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "hsl(185,65%,30%)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "hsl(185,65%,36%)")}
+                >
+                  <Download className="w-3 h-3" />
+                  Download
+                </button>
+              )}
+            </>
+          )}
+          {audio.status === "analyzing" && (
+            <span className="text-[10px] animate-pulse" style={{ color: "hsl(220,10%,60%)" }}>
+              Analyzing...
+            </span>
+          )}
+          {audio.status === "error" && (
+            <span className="text-[10px] text-red-500">Load failed</span>
+          )}
+          <button
+            onClick={activePlayer.toggle}
+            disabled={audio.status !== "ready"}
+            className="w-6 h-6 rounded-full flex items-center justify-center transition-all disabled:opacity-30"
+            style={{ background: "rgba(15,160,155,0.10)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(15,160,155,0.20)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(15,160,155,0.10)")}
+          >
+            {activePlayer.playing
+              ? <Pause className="w-3 h-3" style={{ color: "hsl(185,65%,36%)" }} />
+              : <Play className="w-3 h-3 ml-0.5" style={{ color: "hsl(185,65%,36%)" }} />
+            }
+          </button>
+          <button
+            onClick={() => onRemove(audio.id)}
+            className="w-6 h-6 rounded-full flex items-center justify-center transition-all"
+            style={{ background: "transparent" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.15)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            <Trash2 className="w-3 h-3" style={{ color: isDark ? "hsl(220,10%,55%)" : "hsl(220,10%,65%)" }} />
+          </button>
+        </div>
+      </div>
+
+      {/* Waveform */}
+      <div className="relative" style={{ height: "62px", background: isDark ? "hsl(220,18%,10%)" : "#f8fafc" }}>
+        {audio.status === "analyzing" && (
+          <div className="absolute inset-0 flex items-center justify-center gap-1">
+            {[0.4, 0.7, 1, 0.7, 0.4].map((h, i) => (
+              <div
+                key={i}
+                className="w-0.5 rounded-full animate-pulse"
+                style={{ height: `${h * 28}px`, background: "hsl(185,65%,60%)", animationDelay: `${i * 0.12}s` }}
+              />
+            ))}
+          </div>
+        )}
+        {audio.status === "error" && (
+          <div className="absolute inset-0 flex items-center justify-center text-xs" style={{ color: "hsl(220,10%,65%)" }}>
+            Could not load file
+          </div>
+        )}
+        {audio.status === "ready" && activeWaveform.length > 0 && (
+          <div className="absolute inset-0">
+            <Waveform data={activeWaveform} duration={activeDuration} playProgress={playProgress} />
+          </div>
+        )}
+        {/* Silence preview overlays */}
+        {splitStage === "preview" && audio.status === "ready" && audio.silence && !audio.isTrimmed && (
+          <>
+            {startSilenceDuration > 0.05 && (
+              <div
+                className="absolute top-0 bottom-0 left-0 flex items-center justify-center"
+                style={{
+                  width: `${(startSilenceDuration / audio.duration) * 100}%`,
+                  background: "rgba(239,68,68,0.12)",
+                  borderRight: "1.5px dashed rgba(239,68,68,0.5)",
+                }}
+              >
+                <span className="text-[9px] font-mono text-red-400">-{formatSec(startSilenceDuration)}</span>
+              </div>
+            )}
+            {endSilenceDuration > 0.05 && (
+              <div
+                className="absolute top-0 bottom-0 right-0 flex items-center justify-center"
+                style={{
+                  width: `${(endSilenceDuration / audio.duration) * 100}%`,
+                  background: "rgba(239,68,68,0.12)",
+                  borderLeft: "1.5px dashed rgba(239,68,68,0.5)",
+                }}
+              >
+                <span className="text-[9px] font-mono text-red-400">-{formatSec(endSilenceDuration)}</span>
+              </div>
+            )}
+            <div
+              className="absolute bottom-1 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded text-[9px] font-medium flex items-center gap-1"
+              style={{ background: "rgba(239,68,68,0.10)", color: "#ef4444" }}
+            >
+              <Scissors className="w-2.5 h-2.5" />
+              Cut {formatSec(totalCutDuration)} total
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Time markers */}
+      {audio.status === "ready" && activeDuration > 0 && (
+        <div
+          className="flex justify-between px-2 pt-0.5 pb-1"
+          style={{ background: isDark ? "hsl(220,18%,10%)" : "#f8fafc", borderTop: `1px solid ${isDark ? "hsl(220,15%,20%)" : "hsl(220,15%,92%)"}` }}
+        >
+          {timeMarkers.map((label, i) => (
+            <span key={i} className="text-[9px] font-mono" style={{ color: isDark ? "hsl(220,10%,55%)" : "hsl(220,10%,70%)" }}>
+              {label}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
