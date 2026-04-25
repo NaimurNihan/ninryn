@@ -337,7 +337,7 @@ export default function SrtMergerTab({ setSubtitles, setFilename, onGenerated, o
             onClick={() => {
               if (srtEntries.length > 0) {
                 const converted = srtEntries
-                  .map((entry, i) => `(${i + 1}) ${entry.text.replace(/\n/g, " ")}`)
+                  .map((entry, i) => `(${i + 1}) { ${entry.text.replace(/\n/g, " ")} }`)
                   .join("\n");
                 setNotepadText(converted);
               }
@@ -407,7 +407,7 @@ export default function SrtMergerTab({ setSubtitles, setFilename, onGenerated, o
                 )}
                 <button
                   onClick={() => {
-                    const text = srtEntries.map((e, i) => `(${i + 1}) ${e.text}`).join("\n");
+                    const text = srtEntries.map((e, i) => `(${i + 1}) { ${e.text.replace(/\n/g, " ")} }`).join("\n");
                     navigator.clipboard.writeText(text).then(
                       () => toast({ title: "Copied", description: `Copied ${srtEntries.length} lines to clipboard` }),
                       () => toast({ title: "Copy failed", description: "Could not copy to clipboard", variant: "destructive" })
@@ -759,7 +759,7 @@ export default function SrtMergerTab({ setSubtitles, setFilename, onGenerated, o
                       <button
                         onClick={() => {
                           const converted = parsed
-                            .map((e, i) => `(${i + 1}) ${e.text}`)
+                            .map((e, i) => `(${i + 1}) { ${e.text.replace(/\n/g, " ")} }`)
                             .join("\n");
                           setNotepadText(converted);
                           toast({ title: "Converted", description: `${parsed.length} SRT entries → sentences` });
@@ -857,7 +857,7 @@ export default function SrtMergerTab({ setSubtitles, setFilename, onGenerated, o
                   if (parsed.length === 0) return;
                   e.preventDefault();
                   const converted = parsed
-                    .map((entry, i) => `(${i + 1}) ${entry.text.replace(/\n/g, " ")}`)
+                    .map((entry, i) => `(${i + 1}) { ${entry.text.replace(/\n/g, " ")} }`)
                     .join("\n");
                   const target = e.currentTarget;
                   const start = target.selectionStart ?? notepadText.length;
