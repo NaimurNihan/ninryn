@@ -518,6 +518,15 @@ function Home({
   // "scanning keyframes" is a brief stage right after upload finishes
   // and before per-clip cuts begin. Lets the UI show a status badge.
   const [scanningKeyframes, setScanningKeyframes] = useState(false);
+  // Cancel signal for the in-flight cutting loop. Set to true by reset()
+  // while a job is running so the loop can break out cleanly between
+  // clips. Reset back to false when a new job starts.
+  const cancelRef = useRef<boolean>(false);
+  // ID of the currently active job. The cutting loop captures the jobId
+  // it was started with and bails out if this ref no longer matches —
+  // belt-and-braces alongside cancelRef in case a new job is started
+  // while the previous loop is still mid-iteration.
+  const jobIdRef = useRef<string | null>(null);
 
   function revokeAllClipUrls() {
     for (const url of clipUrlsRef.current.values()) {
@@ -664,6 +673,8 @@ function Home({
     setSelected(new Set());
     setUploading(true);
     setUploadPct(0);
+    // Fresh job → clear any stale cancel signal from a previous job.
+    cancelRef.current = false;
 
     let cues: SrtCue[];
     try {
@@ -771,6 +782,10 @@ function Home({
       clips: clipMetas,
     };
     setJob(newJob);
+    // Mark this jobId as the active one. The cutting loop captures
+    // `jobId` in its closure and breaks out as soon as this ref no
+    // longer matches (e.g. user clicked Cancel / started a new job).
+    jobIdRef.current = jobId;
     setStatus({
       total: clipMetas.length,
       done: 0,
@@ -855,13 +870,19 @@ function Home({
       }
     };
 
+    // Helper: was this job cancelled (or superseded by a newer job)?
+    const isCancelled = () =>
+      cancelRef.current || jobIdRef.current !== jobId;
+
     try {
       // Process clips one at a time using input-seek (`-ss` BEFORE `-i`)
       // for keyframe-aligned fast cuts with no leading freeze/blank.
       // Trade-off: each clip starts at the nearest prior keyframe, so the
       // clip may begin up to ~GOP-size seconds earlier than the SRT cue.
       for (const batch of batches) {
+        if (isCancelled()) break;
         for (const clip of batch) {
+          if (isCancelled()) break;
           // ── Engine recycle every RECYCLE_EVERY clips ─────────────
           if (sinceRecycle >= RECYCLE_EVERY) {
             try {
@@ -954,18 +975,33 @@ function Home({
         }
       }
     } finally {
-      // Free input from virtual FS
+      // Free input from virtual FS (best-effort — engine may already be
+      // dead if we were cancelled mid-flight via terminate()).
       try {
         await ffmpeg.deleteFile(inputName);
       } catch {
         // ignore
       }
-      // Mark job finished
-      setStatus((prev) => (prev ? { ...prev, finished: true } : prev));
+      // Only mark this job as finished if it's still the active one.
+      // If it was cancelled / superseded, reset() has already cleared
+      // the status — don't resurrect it.
+      if (!isCancelled()) {
+        setStatus((prev) => (prev ? { ...prev, finished: true } : prev));
+      }
     }
   }
 
   function reset() {
+    // Signal the in-flight cutting loop (if any) to stop after the
+    // current iteration. Also clear the active job marker so any loop
+    // still mid-iteration bails on its next cancel-check.
+    cancelRef.current = true;
+    jobIdRef.current = null;
+    // Hard-stop the WASM engine if it's currently exec()-ing a clip.
+    // terminate() makes the in-flight ffmpeg.exec() reject, which lets
+    // the loop's catch path run and the cancel-check break the loop.
+    // A fresh engine is created on demand by the next startSegment().
+    disposeFFmpeg();
     revokeAllClipUrls();
     setJob(null);
     setStatus(null);
@@ -1210,9 +1246,13 @@ function Home({
                 variant="outline"
                 size="sm"
                 onClick={reset}
-                className="h-7 rounded-md text-xs px-3"
+                className={
+                  status && !status.finished
+                    ? "h-7 rounded-md text-xs px-3 border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-500/60 dark:text-red-400 dark:hover:bg-red-500/10"
+                    : "h-7 rounded-md text-xs px-3"
+                }
               >
-                New job
+                {status && !status.finished ? "Cancel" : "New job"}
               </Button>
             ) : (
               <Button
